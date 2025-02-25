@@ -5,6 +5,7 @@ on:
     branches: [ master ]
   pull_request:
     branches: [ master ]
+  workflow_dispatch: # 👉 Allows manual triggering of the workflow via GitHub UI   
  
 permissions: 
   checks: write
